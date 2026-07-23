@@ -1,0 +1,11 @@
+# Python virtual environment — machine-specific and huge; the deploy server
+# rebuilds it from requirements.txt, so it should never be committed.
+.venv/
+
+# Compiled Python bytecode caches — generated automatically, not source.
+__pycache__/
+*.pyc
+
+# Secrets and local environment variables — NEVER commit these.
+# This is where the OpenAI / news API keys will live later.
+.env
