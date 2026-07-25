@@ -1,2 +1,4 @@
 fastapi[standard]==0.139.2
 pydantic-settings
+sqlmodel==0.0.39
+psycopg2-binary==2.9.12

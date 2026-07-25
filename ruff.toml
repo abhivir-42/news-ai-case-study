@@ -1,0 +1,9 @@
+target-version = "py312"
+line-length = 100
+
+[lint]
+# Without this, Ruff enables 413 rules and buries real bugs in style noise.
+# E4/E7/E9 = import, statement and syntax errors. F = pyflakes (undefined names,
+# unused imports). Import sorting (I) is deliberately excluded: it flags a
+# cosmetic problem that cannot break anything, so it is not worth a warning.
+select = ["E4", "E7", "E9", "F"]

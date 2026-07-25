@@ -1,12 +1,22 @@
+from contextlib import asynccontextmanager
+
 import httpx
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 
 from config import settings
+from database import create_db_and_tables
 
 GNEWS_SEARCH_URL = "https://gnews.io/api/v4/search"
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    create_db_and_tables()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 class Article(BaseModel):
     title: str
