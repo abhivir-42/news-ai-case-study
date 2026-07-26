@@ -1,0 +1,25 @@
+:root {
+  --text: #2c2a33;
+  --muted: #6b6375;
+  --bg: #ffffff;
+  --border: #e5e4e7;
+  --accent: #5b3bff;
+
+  font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 2rem 1rem;
+}
+
+a {
+  color: inherit;
+}

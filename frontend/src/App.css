@@ -1,0 +1,71 @@
+main {
+  max-width: 44rem;
+  margin: 0 auto;
+}
+
+h1 {
+  margin: 0 0 1.5rem;
+  font-size: 1.75rem;
+}
+
+form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+input {
+  flex: 1;
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+button {
+  padding: 0.6rem 1.1rem;
+  font: inherit;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.error {
+  padding: 0.75rem;
+  color: #a01b2d;
+  background: #fdecee;
+  border-radius: 6px;
+}
+
+.articles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.articles li {
+  padding: 1rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.articles a {
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.articles a:hover {
+  text-decoration: underline;
+}
+
+.articles p {
+  margin: 0.35rem 0 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+}

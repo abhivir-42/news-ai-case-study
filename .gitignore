@@ -1,11 +1,49 @@
 # Python virtual environment — machine-specific and huge; the deploy server
 # rebuilds it from requirements.txt, so it should never be committed.
 .venv/
+venv/
+env/
+
 
 # Compiled Python bytecode caches — generated automatically, not source.
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+
+# Test / linter / type-check caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Build / packaging artifacts
+build/
+dist/
+*.egg-info/
+*.egg
 
 # Secrets and local environment variables — NEVER commit these.
-# This is where the OpenAI / news API keys will live later.
+# This is where the OpenAI / news API keys live.
 .env
+.env.*
+!.env.example
+
+# Local databases (if you ever switch to SQLite for local/dev)
+*.db
+*.sqlite
+*.sqlite3
+
+# Frontend (Vite/React) — dependencies and build output
+node_modules/
+dist-ssr/
+*.local
+
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json

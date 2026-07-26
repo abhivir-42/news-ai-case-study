@@ -2,11 +2,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from sqlmodel import Session
+from fastapi.middleware.cors import CORSMiddleware
 
 from database import Analysis, create_db_and_tables, get_session
 from models import Article
 from services import analysis as analysis_service
 from services.news import NewsProviderError, search_news
+from config import settings
 
 
 @asynccontextmanager
@@ -16,6 +18,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan, title="News AI")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[origin.strip() for origin in settings.allowed_origins.split(",")],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
