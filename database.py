@@ -4,8 +4,7 @@ from sqlmodel import Field, Session, SQLModel, create_engine
 
 from config import settings
 
-engine = create_engine(settings.database_url, echo=True)
-
+engine = create_engine(settings.database_url.get_secret_value(), echo=False)
 
 class Analysis(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)

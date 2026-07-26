@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 from config import settings
 
-client = OpenAI(api_key=settings.openai_api_key)
+client = OpenAI(api_key=settings.openai_api_key.get_secret_value())
 
 SYSTEM_PROMPT = (
     "You are a news analyst. Given a news article, write a concise 2-sentence summary, "

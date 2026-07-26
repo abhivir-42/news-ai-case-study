@@ -15,7 +15,7 @@ async def search_news(query: str, max_results: int = 10) -> list[Article]:
         "q": query,
         "lang": "en",
         "max": max_results,
-        "apikey": settings.gnews_api_key,
+        "apikey": settings.gnews_api_key.get_secret_value(),
     }
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.get(GNEWS_SEARCH_URL, params=params)
