@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Depends, Response
 from pydantic import BaseModel
-from sqlmodel import Session, select
+from sqlmodel import Session, desc, select
 
 
 from config import settings
@@ -72,7 +72,7 @@ def create_analysis(
     response: Response,
     session: Session = Depends(get_session),
 ):
-    # 1. Dedup: has this URL already been analyzed?
+    # 1. Dedup: has this URL already been analysed?
     existing = session.exec(select(Analysis).where(Analysis.url == payload.url)).first()
     if existing:
         response.status_code = 200  # already existed — not "created"
@@ -95,4 +95,25 @@ def create_analysis(
     session.commit()
     session.refresh(analysis)
     response.status_code = 201  # newly created
+    return analysis
+
+
+@app.get("/api/analyses", response_model=list[Analysis])
+def list_analysis(
+    limit: int = Query(20, ge=1, le=100),
+    session: Session = Depends(get_session),
+):
+    return session.exec(
+        select(Analysis).order_by(desc(Analysis.created_at)).limit(limit)
+    ).all()  # desc to give recent articles at top
+
+
+@app.get("/api/analyses/{analysis_id}", response_model=Analysis)
+def get_analysis(
+    analysis_id: int,
+    session: Session = Depends(get_session),
+):
+    analysis = session.get(Analysis, analysis_id)
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Analysis not found")
     return analysis
