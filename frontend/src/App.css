@@ -69,3 +69,64 @@ button:disabled {
   font-size: 0.875rem;
   color: var(--muted);
 }
+
+.tagline,
+.muted {
+  color: var(--muted);
+}
+
+.tagline {
+  margin: -1rem 0 1.5rem;
+}
+
+h2 {
+  margin: 2rem 0 0;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.articles button {
+  margin-top: 0.6rem;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.875rem;
+}
+
+.analysis {
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  background: #f7f7fa;
+  border-radius: 8px;
+}
+
+.analysis p {
+  margin-top: 0.5rem;
+  font-size: 0.9375rem;
+  color: var(--text);
+}
+
+.sentiment {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 999px;
+}
+
+.sentiment.positive {
+  color: #10633f;
+  background: #d8f3e5;
+}
+
+.sentiment.neutral {
+  color: #4a4a55;
+  background: #e8e8ee;
+}
+
+.sentiment.negative {
+  color: #a01b2d;
+  background: #fdecee;
+}
