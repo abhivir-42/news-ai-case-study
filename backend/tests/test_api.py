@@ -1,4 +1,10 @@
+from types import SimpleNamespace
+
+import pytest
+
+import services.ai as ai_service
 import services.analysis as analysis_service
+from services.ai import AIProviderError
 from services.news import NewsProviderError
 
 SAMPLE_ARTICLE = {
@@ -58,6 +64,33 @@ def test_concurrent_insert_does_not_500(client, fake_ai, monkeypatch):
     second = client.post("/api/analyses", json=SAMPLE_ARTICLE)
     assert second.status_code == 200
     assert second.json()["id"] == first.json()["id"]
+
+
+def test_analyse_article_raises_when_model_returns_no_parsed_output(monkeypatch):
+    """The SDK returns parsed=None on a refusal or a length stop. Do not hand that on."""
+    empty = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(parsed=None), finish_reason="length")]
+    )
+    monkeypatch.setattr(
+        ai_service,
+        "client",
+        SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(parse=lambda **kwargs: empty))
+        ),
+    )
+    with pytest.raises(AIProviderError):
+        ai_service.analyse_article("Title", "Description", "Content")
+
+
+def test_create_analysis_returns_502_when_ai_fails(client, monkeypatch):
+    """An AI provider failure is an upstream failure, so it maps to 502 like GNews does."""
+
+    def boom(title, description, content):
+        raise AIProviderError("model returned no parsed output")
+
+    monkeypatch.setattr("services.analysis.analyse_article", boom)
+    response = client.post("/api/analyses", json=SAMPLE_ARTICLE)
+    assert response.status_code == 502
 
 
 def test_list_analyses_returns_stored_rows(client, fake_ai):

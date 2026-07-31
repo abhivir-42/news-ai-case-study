@@ -14,6 +14,10 @@ SYSTEM_PROMPT = (
 )
 
 
+class AIProviderError(Exception):
+    """Raised when the AI provider returns no usable structured output."""
+
+
 class Sentiment(str, Enum):
     positive = "positive"
     neutral = "neutral"
@@ -37,4 +41,11 @@ def analyse_article(title: str, description: str | None, content: str | None) ->
         ],
         response_format=ArticleAnalysis,
     )
-    return completion.choices[0].message.parsed
+    choice = completion.choices[0]
+    if choice.message.parsed is None:
+        # The SDK returns None when the model refused or stopped early, so the
+        # annotation on this function is only true because of this check.
+        raise AIProviderError(
+            f"model returned no parsed output (finish_reason={choice.finish_reason})"
+        )
+    return choice.message.parsed

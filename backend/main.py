@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import Analysis, create_db_and_tables, get_session
 from models import Article
 from services import analysis as analysis_service
+from services.ai import AIProviderError
 from services.news import NewsProviderError, search_news
 from config import settings
 
@@ -46,7 +47,10 @@ def create_analysis(
     response: Response,
     session: Session = Depends(get_session),
 ):
-    analysis, created = analysis_service.get_or_create_analysis(session, payload)
+    try:
+        analysis, created = analysis_service.get_or_create_analysis(session, payload)
+    except AIProviderError as exc:
+        raise HTTPException(status_code=502, detail="AI provider error") from exc
     if not created:
         response.status_code = 200
     return analysis
