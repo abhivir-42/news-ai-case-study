@@ -10,6 +10,11 @@ from config import settings
 OPENAI_TIMEOUT_SECONDS = 20.0
 OPENAI_MAX_RETRIES = 2
 
+# Upstream text is untrusted input with no length guarantee. Uncapped, one long
+# article is an unpriced request and a context-window risk, so clip before sending.
+MAX_DESCRIPTION_CHARS = 1_000
+MAX_CONTENT_CHARS = 4_000
+
 client = OpenAI(
     api_key=settings.openai_api_key.get_secret_value(),
     timeout=OPENAI_TIMEOUT_SECONDS,
@@ -41,8 +46,18 @@ class ArticleAnalysis(BaseModel):
     rationale: str
 
 
+def _clip(value: str | None, limit: int) -> str:
+    if not value:
+        return ""
+    return value if len(value) <= limit else value[:limit] + "..."
+
+
 def analyse_article(title: str, description: str | None, content: str | None) -> ArticleAnalysis:
-    article_text = f"Title: {title}\n\nDescription: {description or ''}\n\nContent: {content or ''}"
+    article_text = (
+        f"Title: {title}\n\n"
+        f"Description: {_clip(description, MAX_DESCRIPTION_CHARS)}\n\n"
+        f"Content: {_clip(content, MAX_CONTENT_CHARS)}"
+    )
     try:
         completion = client.chat.completions.parse(
             model="gpt-4.1-nano",

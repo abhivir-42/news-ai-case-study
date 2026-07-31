@@ -5,6 +5,7 @@ import pytest
 from openai import APITimeoutError
 
 import main
+import dependencies
 from database import Analysis, get_session
 from main import app
 from services.ratelimit import SlidingWindowLimiter
@@ -170,13 +171,63 @@ def test_limiter_allows_up_to_the_limit_then_reports_wait():
 
 def test_analyse_endpoint_returns_429_over_the_limit(client, fake_ai, monkeypatch):
     """The endpoint that spends money must be capped."""
-    monkeypatch.setattr(main.analyse_limiter, "limit", 1)
-    monkeypatch.setattr(main.analyse_limiter, "_hits", {})
+    monkeypatch.setattr(dependencies.analyse_limiter, "limit", 1)
+    monkeypatch.setattr(dependencies.analyse_limiter, "_hits", {})
 
     assert client.post("/api/analyses", json=SAMPLE_ARTICLE).status_code == 201
     blocked = client.post("/api/analyses", json=SAMPLE_ARTICLE)
     assert blocked.status_code == 429
     assert int(blocked.headers["Retry-After"]) > 0
+
+
+def test_prompt_input_is_clipped(monkeypatch):
+    """A long article must not become an unpriced request."""
+    captured = {}
+
+    def capture(**kwargs):
+        captured["messages"] = kwargs["messages"]
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        parsed=ai_service.ArticleAnalysis(
+                            summary="s",
+                            sentiment=ai_service.Sentiment.neutral,
+                            sentiment_score=0.0,
+                            rationale="r",
+                        )
+                    ),
+                    finish_reason="stop",
+                )
+            ]
+        )
+
+    monkeypatch.setattr(
+        ai_service,
+        "client",
+        SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(parse=capture))),
+    )
+    ai_service.analyse_article("Title", "d" * 50_000, "c" * 50_000)
+
+    prompt = captured["messages"][1]["content"]
+    assert len(prompt) < (
+        ai_service.MAX_DESCRIPTION_CHARS + ai_service.MAX_CONTENT_CHARS + 500
+    )
+
+
+def test_cache_hit_is_logged(client, fake_ai, caplog):
+    """The dedup hit rate is the metric that justifies get_or_create."""
+    client.post("/api/analyses", json=SAMPLE_ARTICLE)
+    with caplog.at_level("INFO"):
+        client.post("/api/analyses", json=SAMPLE_ARTICLE)
+    assert "event=analysis.cache_hit" in caplog.text
+
+
+def test_request_id_is_echoed(client):
+    """A caller-supplied id is honoured so a trace can span frontend and API."""
+    response = client.get("/health", headers={"X-Request-ID": "abc123"})
+    assert response.headers["X-Request-ID"] == "abc123"
+    assert client.get("/health").headers["X-Request-ID"]
 
 
 def test_list_analyses_returns_stored_rows(client, fake_ai):

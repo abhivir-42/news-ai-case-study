@@ -1,9 +1,14 @@
+import logging
+import time
+
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, desc, select
 
 from database import Analysis
 from models import Article
 from services.ai import analyse_article
+
+logger = logging.getLogger(__name__)
 
 
 def _find_by_url(session: Session, url: str) -> Analysis | None:
@@ -14,9 +19,15 @@ def get_or_create_analysis(session: Session, article: Article) -> tuple[Analysis
     """Return (analysis, created). Reuses a stored analysis if the URL was seen before."""
     existing = _find_by_url(session, article.url)
     if existing:
+        # The number that justifies the whole get-or-create design. Without it the
+        # dedup hit rate is unanswerable in production.
+        logger.info("event=analysis.cache_hit analysis_id=%s", existing.id)
         return existing, False
 
+    logger.info("event=analysis.cache_miss url=%s", article.url)
+    started = time.monotonic()
     result = analyse_article(article.title, article.description, article.content)
+    logger.info("event=ai.completed duration_ms=%d", (time.monotonic() - started) * 1000)
     analysis = Analysis(
         url=article.url,
         title=article.title,
@@ -36,6 +47,7 @@ def get_or_create_analysis(session: Session, article: Article) -> tuple[Analysis
         winner = _find_by_url(session, article.url)
         if winner is None:
             raise  # the violation was not the url constraint; do not swallow it
+        logger.info("event=analysis.race_lost analysis_id=%s", winner.id)
         return winner, False
     session.refresh(analysis)
     return analysis, True
