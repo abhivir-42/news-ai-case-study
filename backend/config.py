@@ -11,5 +11,11 @@ class Settings(BaseSettings):
 
     allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # POST /api/analyses spends OpenAI money, so it gets the tighter budget.
+    analyse_rate_limit_per_hour: int = 20
+    search_rate_limit_per_minute: int = 30
+    # Only trust X-Forwarded-For when a proxy you control sets it. Render does.
+    trust_forwarded_for: bool = True
+
 
 settings = Settings()

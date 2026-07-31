@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from sqlalchemy import text
 from sqlmodel import Session
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +10,7 @@ from models import Article
 from services import analysis as analysis_service
 from services.ai import AIProviderError
 from services.news import NewsProviderError, search_news
+from services.ratelimit import SlidingWindowLimiter
 from config import settings
 
 
@@ -27,6 +28,38 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+analyse_limiter = SlidingWindowLimiter(settings.analyse_rate_limit_per_hour, 3600)
+search_limiter = SlidingWindowLimiter(settings.search_rate_limit_per_minute, 60)
+
+
+def _client_key(request: Request) -> str:
+    if settings.trust_forwarded_for:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            # Left-most entry is the original client. Only trustworthy because the
+            # only route to this app is through Render's proxy, which sets it.
+            return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _enforce(limiter: SlidingWindowLimiter, request: Request) -> None:
+    retry_after = limiter.check(_client_key(request))
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded",
+            headers={"Retry-After": str(int(retry_after) + 1)},
+        )
+
+
+def analyse_rate_limit(request: Request) -> None:
+    _enforce(analyse_limiter, request)
+
+
+def search_rate_limit(request: Request) -> None:
+    _enforce(search_limiter, request)
 
 
 @app.get("/health")
@@ -50,7 +83,11 @@ def ready(session: Session = Depends(get_session)):
     return {"status": "ready"}
 
 
-@app.get("/api/articles", response_model=list[Article])
+@app.get(
+    "/api/articles",
+    response_model=list[Article],
+    dependencies=[Depends(search_rate_limit)],
+)
 async def search_articles(q: str = Query(..., min_length=1)):
     try:
         return await search_news(q)
@@ -58,7 +95,12 @@ async def search_articles(q: str = Query(..., min_length=1)):
         raise HTTPException(status_code=502, detail="News provider error") from exc
 
 
-@app.post("/api/analyses", response_model=Analysis, status_code=201)
+@app.post(
+    "/api/analyses",
+    response_model=Analysis,
+    status_code=201,
+    dependencies=[Depends(analyse_rate_limit)],
+)
 def create_analysis(
     payload: Article,
     response: Response,

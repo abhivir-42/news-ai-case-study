@@ -4,8 +4,10 @@ import httpx
 import pytest
 from openai import APITimeoutError
 
+import main
 from database import Analysis, get_session
 from main import app
+from services.ratelimit import SlidingWindowLimiter
 
 import services.ai as ai_service
 import services.analysis as analysis_service
@@ -154,6 +156,27 @@ def test_create_analysis_returns_502_when_ai_fails(client, monkeypatch):
     monkeypatch.setattr("services.analysis.analyse_article", boom)
     response = client.post("/api/analyses", json=SAMPLE_ARTICLE)
     assert response.status_code == 502
+
+
+def test_limiter_allows_up_to_the_limit_then_reports_wait():
+    limiter = SlidingWindowLimiter(limit=2, window_seconds=60)
+    assert limiter.check("1.2.3.4") is None
+    assert limiter.check("1.2.3.4") is None
+    retry_after = limiter.check("1.2.3.4")
+    assert retry_after is not None and 0 < retry_after <= 60
+    # A different client has its own budget.
+    assert limiter.check("5.6.7.8") is None
+
+
+def test_analyse_endpoint_returns_429_over_the_limit(client, fake_ai, monkeypatch):
+    """The endpoint that spends money must be capped."""
+    monkeypatch.setattr(main.analyse_limiter, "limit", 1)
+    monkeypatch.setattr(main.analyse_limiter, "_hits", {})
+
+    assert client.post("/api/analyses", json=SAMPLE_ARTICLE).status_code == 201
+    blocked = client.post("/api/analyses", json=SAMPLE_ARTICLE)
+    assert blocked.status_code == 429
+    assert int(blocked.headers["Retry-After"]) > 0
 
 
 def test_list_analyses_returns_stored_rows(client, fake_ai):
