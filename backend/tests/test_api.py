@@ -1,3 +1,4 @@
+import services.analysis as analysis_service
 from services.news import NewsProviderError
 
 SAMPLE_ARTICLE = {
@@ -32,6 +33,31 @@ def test_create_analysis_is_deduplicated(client, fake_ai):
     assert first.status_code == 201
     assert second.status_code == 200
     assert first.json()["id"] == second.json()["id"]
+
+
+def test_concurrent_insert_does_not_500(client, fake_ai, monkeypatch):
+    """Two requests race: both dedup checks miss, so both try to INSERT the same URL.
+
+    The unique index rejects the second write. The endpoint must recover and return the
+    row that won, not surface an IntegrityError as a 500.
+    """
+    first = client.post("/api/analyses", json=SAMPLE_ARTICLE)
+    assert first.status_code == 201
+
+    # Reproduce the interleaving: the dedup check misses once, then the lookup that
+    # runs after the constraint fires behaves normally and finds the winning row.
+    real_find = analysis_service._find_by_url
+    calls = {"n": 0}
+
+    def find_missing_once(session, url):
+        calls["n"] += 1
+        return None if calls["n"] == 1 else real_find(session, url)
+
+    monkeypatch.setattr(analysis_service, "_find_by_url", find_missing_once)
+
+    second = client.post("/api/analyses", json=SAMPLE_ARTICLE)
+    assert second.status_code == 200
+    assert second.json()["id"] == first.json()["id"]
 
 
 def test_list_analyses_returns_stored_rows(client, fake_ai):
