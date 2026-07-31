@@ -4,6 +4,7 @@ import pytest
 
 import services.ai as ai_service
 import services.analysis as analysis_service
+import services.news as news_service
 from services.ai import AIProviderError
 from services.news import NewsProviderError
 
@@ -106,6 +107,51 @@ def test_get_analysis_returns_404_when_missing(client):
 
 def test_search_articles_requires_query(client):
     assert client.get("/api/articles").status_code == 422
+
+
+class _FakeResponse:
+    def __init__(self, status_code=200, payload=None):
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+def _fake_gnews(monkeypatch, response=None, error=None):
+    """Replace the httpx client used by services/news.py with a canned response."""
+
+    class _FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+        async def get(self, url, params=None):
+            if error is not None:
+                raise error
+            return response
+
+    monkeypatch.setattr(news_service.httpx, "AsyncClient", lambda **kwargs: _FakeClient())
+
+
+def test_search_articles_returns_502_on_malformed_article(client, monkeypatch):
+    """One article missing required fields must not take the whole request down."""
+    _fake_gnews(monkeypatch, _FakeResponse(payload={"articles": [{"title": "no url here"}]}))
+    assert client.get("/api/articles?q=india").status_code == 502
+
+
+def test_search_articles_returns_502_when_body_has_no_articles(client, monkeypatch):
+    """A 200 carrying an error body is still a provider failure."""
+    _fake_gnews(monkeypatch, _FakeResponse(payload={"errors": ["invalid api key"]}))
+    assert client.get("/api/articles?q=india").status_code == 502
+
+
+def test_search_articles_returns_502_on_network_error(client, monkeypatch):
+    """A timeout or connection failure is upstream's problem, not a server bug."""
+    _fake_gnews(monkeypatch, error=news_service.httpx.ConnectTimeout("timed out"))
+    assert client.get("/api/articles?q=india").status_code == 502
 
 
 def test_search_articles_returns_502_when_provider_fails(client, monkeypatch):
