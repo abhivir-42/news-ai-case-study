@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 
+import httpx
 import pytest
+from openai import APITimeoutError
 
 import services.ai as ai_service
 import services.analysis as analysis_service
@@ -81,6 +83,29 @@ def test_analyse_article_raises_when_model_returns_no_parsed_output(monkeypatch)
     )
     with pytest.raises(AIProviderError):
         ai_service.analyse_article("Title", "Description", "Content")
+
+
+def test_analyse_article_wraps_sdk_errors(monkeypatch):
+    """Once the SDK has exhausted its retries, its exception is an upstream failure."""
+
+    def raise_timeout(**kwargs):
+        raise APITimeoutError(request=httpx.Request("POST", "https://api.openai.com"))
+
+    monkeypatch.setattr(
+        ai_service,
+        "client",
+        SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(parse=raise_timeout))
+        ),
+    )
+    with pytest.raises(AIProviderError):
+        ai_service.analyse_article("Title", "Description", "Content")
+
+
+def test_openai_client_is_bounded():
+    """A call in the request path must not wait forever."""
+    assert ai_service.OPENAI_TIMEOUT_SECONDS <= 30
+    assert ai_service.OPENAI_MAX_RETRIES >= 1
 
 
 def test_create_analysis_returns_502_when_ai_fails(client, monkeypatch):
