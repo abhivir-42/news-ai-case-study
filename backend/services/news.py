@@ -1,3 +1,11 @@
+"""GNews client and the mapping that keeps their shape out of ours.
+
+_to_article is the anti-corruption layer: the provider's field names stop here.
+Everything that can go wrong upstream - a bad status, a non-JSON body, a missing
+articles list, a malformed row, a timeout - becomes NewsProviderError, which the
+route turns into 502.
+"""
+
 import httpx
 from pydantic import ValidationError
 

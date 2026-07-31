@@ -1,3 +1,7 @@
+// Every HTTP call the app makes. Components never call fetch directly, the same
+// way routes never call GNews directly. API_URL is baked in at build time, so
+// changing it needs a redeploy and it must never hold a secret.
+
 import type { Analysis, Article } from './types'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000'

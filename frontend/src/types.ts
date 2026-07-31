@@ -1,3 +1,7 @@
+// The API contract in TypeScript. Mirrors backend/models.py and the Analysis
+// table. Hand-written here; in production these would be generated from
+// /openapi.json so they cannot drift from the server.
+
 export interface Article {
     title: string
     description: string | null

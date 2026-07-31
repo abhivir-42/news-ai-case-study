@@ -1,3 +1,11 @@
+"""OpenAI client and the analysis contract.
+
+`ArticleAnalysis` is passed as response_format, so the model is constrained to
+that JSON schema and `sentiment` can only be one of three values. The call is
+bounded by an explicit timeout and retry count because it sits in the request
+path. Failures become AIProviderError, which the route turns into 502.
+"""
+
 from enum import Enum
 from openai import OpenAI, OpenAIError
 from pydantic import BaseModel

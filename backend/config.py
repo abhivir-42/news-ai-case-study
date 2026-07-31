@@ -1,3 +1,12 @@
+"""Configuration, read from the environment and validated at import.
+
+Every value is checked when `settings = Settings()` runs, so a missing key is a
+startup crash with the field name rather than a confusing failure mid-request.
+Secrets are SecretStr, which renders as ********** in logs and tracebacks; call
+.get_secret_value() to read them. Fields with a default are optional config;
+fields without one are required.
+"""
+
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 

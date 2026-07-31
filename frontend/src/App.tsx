@@ -1,3 +1,7 @@
+// All application state lives here: query, articles, analyses, and the two
+// in-flight flags. Child components are stateless and receive props.
+// useEffect with an empty dependency array loads history once, on mount.
+
 import { useEffect, useState } from 'react'
 import './App.css'
 import { createAnalysis, listAnalyses, searchArticles } from './api'

@@ -1,3 +1,10 @@
+"""Orchestration: dedup, call the model, store the result, read it back.
+
+The only module that knows the order of operations. Takes a session rather than
+opening one, and returns (analysis, created) rather than a status code, so the
+route decides what 201 vs 200 means. Knows nothing about HTTP.
+"""
+
 import logging
 import time
 
