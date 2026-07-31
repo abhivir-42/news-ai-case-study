@@ -15,7 +15,10 @@ class Analysis(SQLModel, table=True):
     summary: str
     sentiment: str
     sentiment_score: float
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Indexed because list_analyses orders every read by this column.
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), index=True
+    )
 
 
 def create_db_and_tables():

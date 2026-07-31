@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response
+from sqlalchemy import text
 from sqlmodel import Session
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -30,7 +31,23 @@ app.add_middleware(
 
 @app.get("/health")
 def health():
+    """Liveness: is the process up? Deliberately touches nothing."""
     return {"status": "ok"}
+
+
+@app.get("/ready")
+def ready(session: Session = Depends(get_session)):
+    """Readiness: can this instance actually serve traffic?
+
+    Separate from /health on purpose. A liveness probe that queries the database
+    restarts the app when the database blips, which fixes nothing. A readiness
+    probe that does not query it reports healthy while every request fails.
+    """
+    try:
+        session.execute(text("SELECT 1"))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="database unavailable") from exc
+    return {"status": "ready"}
 
 
 @app.get("/api/articles", response_model=list[Article])

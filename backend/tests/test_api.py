@@ -4,6 +4,9 @@ import httpx
 import pytest
 from openai import APITimeoutError
 
+from database import Analysis, get_session
+from main import app
+
 import services.ai as ai_service
 import services.analysis as analysis_service
 import services.news as news_service
@@ -25,6 +28,40 @@ def test_health(client):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_ready_returns_200_when_database_answers(client):
+    response = client.get("/ready")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready"}
+
+
+def test_ready_returns_503_when_database_is_down(client):
+    """Readiness must fail when the database does, or the probe is decorative."""
+
+    class _BrokenSession:
+        def execute(self, *args, **kwargs):
+            raise RuntimeError("connection refused")
+
+    app.dependency_overrides[get_session] = lambda: _BrokenSession()
+    assert client.get("/ready").status_code == 503
+
+
+def test_health_does_not_touch_the_database(client):
+    """Liveness stays cheap: it must still answer while the database is down."""
+
+    class _BrokenSession:
+        def execute(self, *args, **kwargs):
+            raise RuntimeError("connection refused")
+
+    app.dependency_overrides[get_session] = lambda: _BrokenSession()
+    assert client.get("/health").status_code == 200
+
+
+def test_created_at_is_indexed():
+    """Every read of the feed orders by created_at, so it must not be a full scan."""
+    indexed = {column.name for index in Analysis.__table__.indexes for column in index.columns}
+    assert "created_at" in indexed
 
 
 def test_create_analysis_returns_201(client, fake_ai):
