@@ -168,6 +168,22 @@ def test_limiter_allows_up_to_the_limit_then_reports_wait():
     assert limiter.check("5.6.7.8") is None
 
 
+def test_limiter_charges_the_given_cost():
+    """One request is not always one unit of spend."""
+    limiter = SlidingWindowLimiter(limit=3, window_seconds=60)
+    assert limiter.check("1.2.3.4", cost=2) is None
+    # One of three left, so a two-call request cannot be afforded.
+    assert limiter.check("1.2.3.4", cost=2) is not None
+    assert limiter.check("1.2.3.4", cost=1) is None
+
+
+def test_limiter_reports_a_wait_when_the_cost_exceeds_the_limit():
+    """A request priced above the limit must report a wait, not raise on hits[0]."""
+    limiter = SlidingWindowLimiter(limit=2, window_seconds=60)
+    retry_after = limiter.check("1.2.3.4", cost=5)
+    assert retry_after is not None and 0 < retry_after <= 60
+
+
 def test_analyse_endpoint_returns_429_over_the_limit(client, fake_ai, monkeypatch):
     """The endpoint that spends money must be capped."""
     monkeypatch.setattr(dependencies.analyse_limiter, "limit", 1)

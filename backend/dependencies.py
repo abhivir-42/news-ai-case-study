@@ -28,8 +28,8 @@ def client_key(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def _enforce(limiter: SlidingWindowLimiter, request: Request) -> None:
-    retry_after = limiter.check(client_key(request))
+def _enforce(limiter: SlidingWindowLimiter, request: Request, cost: int = 1) -> None:
+    retry_after = limiter.check(client_key(request), cost)
     if retry_after is None:
         return
     raise HTTPException(
@@ -42,6 +42,15 @@ def _enforce(limiter: SlidingWindowLimiter, request: Request) -> None:
 
 def analyse_rate_limit(request: Request) -> None:
     _enforce(analyse_limiter, request)
+
+
+def enforce_analyse_limit(request: Request, cost: int) -> None:
+    """Charge the analyse budget for `cost` model calls.
+
+    Called from inside a handler rather than declared as a dependency because the
+    price of a bulk request is only known once its body has been parsed.
+    """
+    _enforce(analyse_limiter, request, cost)
 
 
 def search_rate_limit(request: Request) -> None:
