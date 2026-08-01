@@ -12,9 +12,22 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
 
+import dependencies
 from database import get_session
 from main import app
 from services.ai import ArticleAnalysis, Sentiment
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiters():
+    """Clear the limiters before every test.
+
+    They are module-level singletons, so their counters outlive the test that
+    filled them. Without this a test passes or fails on how many requests the
+    tests that happened to run before it made.
+    """
+    dependencies.analyse_limiter._hits.clear()
+    dependencies.search_limiter._hits.clear()
 
 
 @pytest.fixture(name="session")

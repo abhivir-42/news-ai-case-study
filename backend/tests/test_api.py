@@ -4,7 +4,6 @@ import httpx
 import pytest
 from openai import APITimeoutError
 
-import main
 import dependencies
 from database import Analysis, get_session
 from main import app
