@@ -245,6 +245,122 @@ def test_request_id_is_echoed(client):
     assert client.get("/health").headers["X-Request-ID"]
 
 
+SECOND_ARTICLE = {
+    **SAMPLE_ARTICLE,
+    "title": "Company Y issues profit warning",
+    "url": "https://example.com/profit-warning",
+}
+
+
+def test_bulk_analyses_one_outcome_per_article(client, fake_ai):
+    response = client.post("/api/analyses/bulk", json=[SAMPLE_ARTICLE, SECOND_ARTICLE])
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["status"] for item in body] == ["created", "created"]
+    assert [item["url"] for item in body] == [SAMPLE_ARTICLE["url"], SECOND_ARTICLE["url"]]
+
+
+def test_bulk_analyses_serialises_every_row(client, fake_ai):
+    """Regression: each commit expires the rows returned before it.
+
+    An expired SQLModel row serialises to {} instead of raising, so without the
+    reload every article but the last came back as an empty object.
+    """
+    response = client.post("/api/analyses/bulk", json=[SAMPLE_ARTICLE, SECOND_ARTICLE])
+    for item in response.json():
+        assert item["analysis"]["summary"] == "Fake summary."
+        assert item["analysis"]["id"] is not None
+
+
+def test_bulk_analyses_reports_reused_rows(client, fake_ai):
+    """A caller needs to tell a fresh analysis from one that was already stored."""
+    client.post("/api/analyses", json=SAMPLE_ARTICLE)
+    body = client.post("/api/analyses/bulk", json=[SAMPLE_ARTICLE, SECOND_ARTICLE]).json()
+    assert [item["status"] for item in body] == ["reused", "created"]
+
+
+def test_bulk_analyses_deduplicates_repeated_urls(client, fake_ai):
+    """The same URL twice in one payload must not be analysed or billed twice."""
+    response = client.post("/api/analyses/bulk", json=[SAMPLE_ARTICLE, SAMPLE_ARTICLE])
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["status"] == "created"
+
+
+def test_bulk_analyses_rejects_more_than_the_maximum(client, fake_ai):
+    oversized = [{**SAMPLE_ARTICLE, "url": f"https://example.com/{i}"} for i in range(11)]
+    assert client.post("/api/analyses/bulk", json=oversized).status_code == 422
+
+
+def test_bulk_analyses_charges_the_limiter_per_article(client, fake_ai, monkeypatch):
+    """Bulk must not be a cheaper route to the same spend.
+
+    Three articles cost three of the four available calls, so a second request for
+    two more is over budget even though only one request has been made.
+    """
+    monkeypatch.setattr(dependencies.analyse_limiter, "limit", 4)
+    monkeypatch.setattr(dependencies.analyse_limiter, "_hits", {})
+
+    third = {**SAMPLE_ARTICLE, "url": "https://example.com/third"}
+    first = client.post("/api/analyses/bulk", json=[SAMPLE_ARTICLE, SECOND_ARTICLE, third])
+    assert first.status_code == 200
+
+    blocked = client.post(
+        "/api/analyses/bulk",
+        json=[
+            {**SAMPLE_ARTICLE, "url": "https://example.com/fourth"},
+            {**SAMPLE_ARTICLE, "url": "https://example.com/fifth"},
+        ],
+    )
+    assert blocked.status_code == 429
+    assert int(blocked.headers["Retry-After"]) > 0
+
+
+def test_bulk_analyses_returns_207_when_only_some_fail(client, fake_ai, monkeypatch):
+    """A part-successful batch keeps the analyses that were paid for."""
+
+    def fail_second(title, description, content):
+        if title == SECOND_ARTICLE["title"]:
+            raise AIProviderError("model returned no parsed output")
+        return ai_service.ArticleAnalysis(
+            summary="Fake summary.",
+            sentiment=ai_service.Sentiment.neutral,
+            sentiment_score=0.0,
+            rationale="Fake rationale.",
+        )
+
+    monkeypatch.setattr("services.analysis.analyse_article", fail_second)
+    response = client.post("/api/analyses/bulk", json=[SAMPLE_ARTICLE, SECOND_ARTICLE])
+    assert response.status_code == 207
+
+    body = response.json()
+    assert body[0]["status"] == "created"
+    assert body[0]["analysis"]["summary"] == "Fake summary."
+    assert body[1]["status"] == "failed"
+    assert body[1]["analysis"] is None
+    assert body[1]["error"]
+
+    # The one that succeeded was still stored, not rolled back with its neighbour.
+    assert len(client.get("/api/analyses").json()) == 1
+
+
+def test_bulk_analyses_returns_502_when_every_article_fails(client, monkeypatch):
+    """Nothing succeeded, so the upstream failure is the whole story."""
+
+    def boom(title, description, content):
+        raise AIProviderError("model returned no parsed output")
+
+    monkeypatch.setattr("services.analysis.analyse_article", boom)
+    response = client.post("/api/analyses/bulk", json=[SAMPLE_ARTICLE, SECOND_ARTICLE])
+    assert response.status_code == 502
+
+
+def test_bulk_analyses_accepts_an_empty_payload(client, fake_ai):
+    response = client.post("/api/analyses/bulk", json=[])
+    assert response.status_code == 200
+    assert response.json() == []
+
+
 def test_list_analyses_returns_stored_rows(client, fake_ai):
     client.post("/api/analyses", json=SAMPLE_ARTICLE)
     response = client.get("/api/analyses")

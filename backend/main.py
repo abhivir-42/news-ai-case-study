@@ -8,15 +8,15 @@ model is called, or how a row is stored.
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlmodel import Session
 
 from config import settings
 from database import Analysis, create_db_and_tables, get_session
-from dependencies import analyse_rate_limit, search_rate_limit
-from models import Article
+from dependencies import analyse_rate_limit, enforce_analyse_limit, search_rate_limit
+from models import AnalysisOutcome, Article
 from observability import configure_logging, new_request_id, request_id_var
 from services import analysis as analysis_service
 from services.ai import AIProviderError
@@ -128,6 +128,10 @@ async def search_articles(q: str = Query(..., min_length=1)):
 # Analyses - AI summary and sentiment, stored and read back
 # ---------------------------------------------------------------------------
 
+# A page of GNews results is ten articles, and ten sequential model calls is
+# already as long as a caller should wait on one request.
+MAX_BULK_ARTICLES = 10
+
 
 @app.post(
     "/api/analyses",
@@ -158,6 +162,35 @@ def list_analyses(
     session: Session = Depends(get_session),
 ):
     return analysis_service.list_analyses(session, limit)
+
+
+@app.post("/api/analyses/bulk", response_model=list[AnalysisOutcome])
+def create_analyses(
+    request: Request,
+    response: Response,
+    payload: list[Article] = Body(..., max_length=MAX_BULK_ARTICLES),
+    session: Session = Depends(get_session),
+):
+    """Analyse a page of search results in one request.
+
+    200 when every article succeeded, 207 when only some did, 502 when none did.
+    A partly successful batch is not an error: those analyses exist and were paid
+    for, so the caller gets them along with the verdict on the ones that failed.
+    """
+    articles = analysis_service.dedupe_by_url(payload)
+    # This endpoint makes one model call per article, so it has to pay for each.
+    # Charging it once would make bulk a tenfold cheaper way to spend the same money.
+    enforce_analyse_limit(request, cost=len(articles))
+
+    outcomes = analysis_service.analyse_many(session, articles)
+
+    failures = [outcome for outcome in outcomes if outcome.status == "failed"]
+    if failures and len(failures) == len(outcomes):
+        logger.warning("event=ai.failed count=%d", len(failures))
+        raise HTTPException(status_code=502, detail="AI provider error")
+    if failures:
+        response.status_code = 207
+    return outcomes
 
 
 @app.get("/api/analyses/{analysis_id}", response_model=Analysis)

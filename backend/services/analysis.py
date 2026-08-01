@@ -12,8 +12,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, desc, select
 
 from database import Analysis
-from models import Article
-from services.ai import analyse_article
+from models import AnalysisOutcome, Article
+from services.ai import AIProviderError, analyse_article
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,55 @@ def get_or_create_analysis(session: Session, article: Article) -> tuple[Analysis
         return winner, False
     session.refresh(analysis)
     return analysis, True
+
+
+def dedupe_by_url(articles: list[Article]) -> list[Article]:
+    """Drop repeated URLs, keeping the first. Order is preserved.
+
+    The same URL twice in one payload is never deliberate, and left alone it would
+    be priced twice by the rate limiter and returned twice to the caller.
+    """
+    seen: set[str] = set()
+    unique = []
+    for article in articles:
+        if article.url in seen:
+            continue
+        seen.add(article.url)
+        unique.append(article)
+    return unique
+
+
+def analyse_many(session: Session, articles: list[Article]) -> list[AnalysisOutcome]:
+    """Analyse each article independently and report a verdict for each.
+
+    One article's failure must not lose the batch. By the time the fifth model call
+    fails, four analyses are committed and paid for; raising here would discard them
+    and bill the caller for nothing. Expects `dedupe_by_url` to have run already.
+    """
+    outcomes: list[AnalysisOutcome] = []
+    for article in articles:
+        try:
+            analysis, created = get_or_create_analysis(session, article)
+        except AIProviderError as exc:
+            logger.warning("event=analysis.item_failed url=%s error=%s", article.url, exc)
+            outcomes.append(
+                AnalysisOutcome(url=article.url, status="failed", error="AI provider error")
+            )
+            continue
+        outcomes.append(
+            AnalysisOutcome(
+                url=article.url,
+                status="created" if created else "reused",
+                analysis=analysis,
+            )
+        )
+
+    # Each commit above expired every row handed back before it, and an expired row
+    # serialises as {} rather than raising. Reload them now the last commit is done.
+    for outcome in outcomes:
+        if outcome.analysis is not None:
+            session.refresh(outcome.analysis)
+    return outcomes
 
 
 def list_analyses(session: Session, limit: int = 20) -> list[Analysis]:
