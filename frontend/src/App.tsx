@@ -1,10 +1,16 @@
-// All application state lives here: query, articles, analyses, and the two
+// All application state lives here: query, articles, analyses, and the three
 // in-flight flags. Child components are stateless and receive props.
 // useEffect with an empty dependency array loads history once, on mount.
 
 import { useEffect, useState } from 'react'
 import './App.css'
-import { createAnalysis, listAnalyses, searchArticles } from './api'
+import {
+  MAX_BULK_ARTICLES,
+  createAnalyses,
+  createAnalysis,
+  listAnalyses,
+  searchArticles,
+} from './api'
 import { AnalysisView } from './components/AnalysisView'
 import { ArticleCard } from './components/ArticleCard'
 import type { Analysis, Article } from './types'
@@ -15,6 +21,7 @@ function App() {
   const [analyses, setAnalyses] = useState<Analysis[]>([])
   const [loading, setLoading] = useState(false)
   const [analysingUrl, setAnalysingUrl] = useState<string | null>(null)
+  const [analysingAll, setAnalysingAll] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -52,7 +59,34 @@ function App() {
     }
   }
 
+  async function handleAnalyseAll() {
+    setAnalysingAll(true)
+    setError(null)
+    try {
+      const outcomes = await createAnalyses(articles)
+      // A batch can be part successful, so take the analyses that came back and
+      // report the rest rather than treating the whole request as failed.
+      const analysed = outcomes.flatMap((outcome) =>
+        outcome.analysis ? [outcome.analysis] : [],
+      )
+      setAnalyses((current) => [
+        ...analysed,
+        ...current.filter((item) => !analysed.some((row) => row.id === item.id)),
+      ])
+
+      const failed = outcomes.filter((outcome) => outcome.status === 'failed')
+      if (failed.length > 0) {
+        setError(`${failed.length} of ${outcomes.length} articles could not be analysed.`)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Analyse failed')
+    } finally {
+      setAnalysingAll(false)
+    }
+  }
+
   const analysisByUrl = new Map(analyses.map((item) => [item.url, item]))
+  const bulkCount = Math.min(articles.length, MAX_BULK_ARTICLES)
 
   return (
     <main>
@@ -75,13 +109,16 @@ function App() {
       {articles.length > 0 && (
         <section>
           <h2>Results</h2>
+          <button onClick={handleAnalyseAll} disabled={analysingAll}>
+            {analysingAll ? 'Analysing…' : `Analyse all ${bulkCount}`}
+          </button>
           <ul className="articles">
             {articles.map((article) => (
               <ArticleCard
                 key={article.url}
                 article={article}
                 analysis={analysisByUrl.get(article.url)}
-                isAnalysing={analysingUrl === article.url}
+                isAnalysing={analysingAll || analysingUrl === article.url}
                 onAnalyse={handleAnalyse}
               />
             ))}

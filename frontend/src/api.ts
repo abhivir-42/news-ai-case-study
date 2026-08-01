@@ -2,9 +2,13 @@
 // way routes never call GNews directly. API_URL is baked in at build time, so
 // changing it needs a redeploy and it must never hold a secret.
 
-import type { Analysis, Article } from './types'
+import type { Analysis, AnalysisOutcome, Article } from './types'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000'
+
+// Mirrors MAX_BULK_ARTICLES in backend/main.py. Sending more is a 422, so the
+// slice below turns a server-side rejection into a client-side decision.
+export const MAX_BULK_ARTICLES = 10
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
@@ -30,4 +34,11 @@ export function createAnalysis(article: Article) {
 
 export function listAnalyses(limit = 20) {
   return request<Analysis[]>(`/api/analyses?limit=${limit}`)
+}
+
+export function createAnalyses(articles: Article[]) {
+  return request<AnalysisOutcome[]>('/api/analyses/bulk', {
+    method: 'POST',
+    body: JSON.stringify(articles.slice(0, MAX_BULK_ARTICLES)),
+  })
 }
